@@ -1,0 +1,182 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-gray-200;
+  }
+  
+  body {
+    @apply bg-gray-50 text-gray-900 font-sans;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold;
+  }
+  
+  /* 滚动条样式 */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
+}
+
+@layer components {
+  /* 按钮组件样式 */
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:pointer-events-none disabled:opacity-50;
+  }
+  
+  .btn-primary {
+    @apply bg-primary-600 text-white hover:bg-primary-700;
+  }
+  
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-900 hover:bg-gray-300;
+  }
+  
+  .btn-ghost {
+    @apply hover:bg-gray-100;
+  }
+  
+  /* 输入框样式 */
+  .input {
+    @apply flex h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  
+  /* 卡片样式 */
+  .card {
+    @apply rounded-xl border border-gray-200 bg-white p-6 shadow-sm;
+  }
+  
+  /* AI 功能按钮样式 */
+  .ai-button {
+    @apply inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-primary-500 to-primary-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-all hover:from-primary-600 hover:to-primary-700 hover:shadow-md;
+  }
+  
+  /* 渐变图标样式 */
+  .icon-gradient {
+    background: linear-gradient(135deg, #9683d2 0%, #6f66a0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .icon-gradient-bg {
+    background: linear-gradient(135deg, #9683d2 0%, #6f66a0 100%);
+  }
+}
+
+/* Monaco Editor 样式覆盖 */
+.monaco-editor {
+  @apply rounded-lg;
+}
+
+/* Markdown 预览样式 */
+.markdown-preview {
+  @apply max-w-none;
+}
+
+.markdown-preview h1 {
+  @apply text-2xl font-bold text-gray-900 mb-4;
+}
+
+.markdown-preview h2 {
+  @apply text-xl font-semibold text-gray-800 mb-3;
+}
+
+.markdown-preview h3 {
+  @apply text-lg font-medium text-gray-700 mb-2;
+}
+
+.markdown-preview p {
+  @apply text-gray-600 leading-relaxed mb-4;
+}
+
+.markdown-preview code {
+  @apply bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-sm font-mono;
+}
+
+.markdown-preview pre {
+  @apply bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto;
+}
+
+.markdown-preview blockquote {
+  @apply border-l-4 border-primary-500 pl-4 italic text-gray-600;
+}
+
+.markdown-preview ul {
+  @apply mb-4 pl-6;
+  list-style-type: disc;
+}
+
+.markdown-preview ol {
+  @apply mb-4 pl-6;
+  list-style-type: decimal;
+}
+
+.markdown-preview ul ul {
+  list-style-type: circle;
+}
+
+.markdown-preview ul ul ul {
+  list-style-type: square;
+}
+
+.markdown-preview li {
+  @apply mb-1;
+  display: list-item;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  /* 确保触摸目标至少44px */
+  .touch-manipulation {
+    touch-action: manipulation;
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* 移动端字体优化 */
+  body {
+    -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* 移动端滚动优化 */
+  .overflow-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* 移动端输入框优化 */
+  input, textarea {
+    font-size: 16px; /* 防止iOS缩放 */
+  }
+  
+  /* 移动端按钮优化 */
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* 高DPI屏幕优化 */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .markdown-preview {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
