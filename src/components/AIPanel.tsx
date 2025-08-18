@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, RefreshCw, Copy, Check, AlertCircle } from 'lucide-react';
+import { X, Sparkles, RefreshCw, Copy, Check, AlertCircle, Minimize2 } from 'lucide-react';
 import { AIService, AIConfigManager, AIRequest, AIResponse } from '../services/aiService';
 import { PromptManager, PromptTemplate } from '../services/promptService';
 import { FileDocument } from '../services/fileService';
+import { AITaskService } from '../services/aiTaskService';
 
 type Document = FileDocument;
 
@@ -10,11 +11,12 @@ interface AIPanelProps {
   onClose: () => void;
   document: Document;
   onDocumentChange: (document: Document) => void;
+  onMinimize?: () => void;
 }
 
 type AIFunction = 'full-summary' | 'full-abstract' | 'full-translate' | 'outline-generate' | 'mindmap-generate';
 
-const AIPanel: React.FC<AIPanelProps> = ({ onClose, document, onDocumentChange }) => {
+const AIPanel: React.FC<AIPanelProps> = ({ onClose, document, onDocumentChange, onMinimize }) => {
   const [selectedFunction, setSelectedFunction] = useState<AIFunction>('full-summary');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState('');
@@ -22,6 +24,7 @@ const AIPanel: React.FC<AIPanelProps> = ({ onClose, document, onDocumentChange }
   const [error, setError] = useState<string | null>(null);
   const [aiService, setAiService] = useState<AIService | null>(null);
   const [showFunctionSelection, setShowFunctionSelection] = useState(true);
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   // 移除selectedText状态，专注于全文处理
 
   // 初始化AI服务
@@ -86,6 +89,19 @@ const AIPanel: React.FC<AIPanelProps> = ({ onClose, document, onDocumentChange }
         setIsLoading(false);
         return;
       }
+      
+      // 创建AI任务
+      const taskId = AITaskService.createTask(
+        'fulltext',
+        selectedFunction,
+        fullContent,
+        document.id,
+        document.title
+      );
+      setCurrentTaskId(taskId);
+      
+      // 更新任务状态为运行中
+      AITaskService.updateTaskStatus(taskId, 'running');
 
       // 根据功能类型构建不同的请求
       let functionType: 'continue' | 'rewrite' | 'summarize' | 'translate' | 'outline';
@@ -102,7 +118,7 @@ const AIPanel: React.FC<AIPanelProps> = ({ onClose, document, onDocumentChange }
           break;
         case 'full-translate':
           functionType = 'translate';
-          prompt = `请将以下完整文档翻译为英文：\n\n${fullContent}`;
+          prompt = `请将以下完整文档翻译为英文，输出要求如下：\n仅输出翻译结果，绝对不添加任何解释、解说、注释（包括括号内的补充文字），也不要有任何与翻译内容无关的文字。\n参考以下示例格式：\n【原文示例】：请你描述今天的天气。\n【翻译示例】：Please describe the weather today.\n现在请翻译：\n\n${fullContent}`;
           break;
         case 'outline-generate':
           functionType = 'outline';
@@ -162,14 +178,37 @@ const AIPanel: React.FC<AIPanelProps> = ({ onClose, document, onDocumentChange }
       
       if (response.success) {
         setResult(response.content);
+        // 更新任务状态为完成
+        AITaskService.updateTaskStatus(taskId, 'completed', response.content);
       } else {
-        setError(response.error || 'AI处理失败');
+        const errorMsg = response.error || 'AI处理失败';
+        setError(errorMsg);
+        // 更新任务状态为失败
+        AITaskService.updateTaskStatus(taskId, 'error', undefined, errorMsg);
       }
     } catch (error) {
       console.error('AI处理错误:', error);
-      setError(error instanceof Error ? error.message : '处理过程中发生错误');
+      const errorMsg = error instanceof Error ? error.message : '处理过程中发生错误';
+      setError(errorMsg);
+      
+      // 更新任务状态为失败
+      if (currentTaskId) {
+        AITaskService.updateTaskStatus(currentTaskId, 'error', undefined, errorMsg);
+      }
     } finally {
       setIsLoading(false);
+      setCurrentTaskId(null);
+    }
+  };
+  
+  // 最小化到后台运行
+  const handleMinimize = () => {
+    if (isLoading && currentTaskId) {
+      // 如果正在运行，最小化到后台
+      onMinimize?.();
+    } else {
+      // 如果没有运行，直接关闭
+      onClose();
     }
   };
 
@@ -257,14 +296,28 @@ const AIPanel: React.FC<AIPanelProps> = ({ onClose, document, onDocumentChange }
             <div>
               <h3 className="text-lg font-semibold text-gray-900">AI 助手</h3>
               <p className="text-sm text-gray-500">当前文档：{document.title}</p>
+              {isLoading && currentTaskId && (
+                <p className="text-xs text-blue-600 mt-1">任务运行中，可最小化到后台</p>
+              )}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            {isLoading && currentTaskId && (
+              <button
+                onClick={handleMinimize}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                title="最小化到后台运行"
+              >
+                <Minimize2 className="w-5 h-5" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1 hover:bg-gray-100 rounded transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
       

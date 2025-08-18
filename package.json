@@ -8,7 +8,13 @@
     "type": "git",
     "url": "https://github.com/ShelftinLio/LInk.git"
   },
-  "keywords": ["ai", "writing", "markdown", "editor", "assistant"],
+  "keywords": [
+    "ai",
+    "writing",
+    "markdown",
+    "editor",
+    "assistant"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,8 +26,10 @@
     "@monaco-editor/react": "^4.6.0",
     "@types/marked": "^5.0.2",
     "clsx": "^2.0.0",
+    "docx": "^9.5.1",
     "dompurify": "^3.0.5",
     "lucide-react": "^0.294.0",
+    "mammoth": "^1.10.0",
     "marked": "^9.1.6",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

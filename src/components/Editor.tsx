@@ -4,6 +4,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
 import { FileDocument } from '../services/fileService';
+import { LocalFileSystemService } from '../services/localFileService';
 import SelectionToolbar from './SelectionToolbar';
 
 type Document = FileDocument;
@@ -106,6 +107,13 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
     setHistory([document.content]);
     setHistoryIndex(0);
   }, [document.id]);
+
+  // 当父组件更新了同一文档的 content（例如来自划词助手/AI面板）时，立即同步到本地内容
+  useEffect(() => {
+    if (content !== document.content) {
+      setContent(document.content);
+    }
+  }, [document.content]);
   
   // 点击外部关闭下拉菜单
   useEffect(() => {
@@ -123,11 +131,25 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
 
   const handleContentChange = (newContent: string, skipHistory = false) => {
     setContent(newContent);
-    onDocumentChange({
+    const updatedDocument = {
       ...document,
       content: newContent,
       updatedAt: new Date()
-    });
+    };
+    onDocumentChange(updatedDocument);
+    
+    // 自动保存本地文件
+    if (document.filePath && document.filePath !== '') {
+      // 延迟保存，避免频繁写入
+      clearTimeout((window as any).autoSaveTimeout);
+      (window as any).autoSaveTimeout = setTimeout(async () => {
+        try {
+          await LocalFileSystemService.saveFile(updatedDocument);
+        } catch (error) {
+          console.error('自动保存失败:', error);
+        }
+      }, 1000);
+    }
     
     // 如果不是撤销/重做操作，添加到历史记录
     if (!skipHistory && !isUndoRedo) {
@@ -146,6 +168,11 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
         setHistoryIndex(prev => prev + 1);
       }
     }
+  };
+  
+  // 支持撤销历史的文档更新方法（供AI划词助手使用）
+  const handleDocumentChangeWithHistory = (updatedDocument: Document) => {
+    handleContentChange(updatedDocument.content, false);
   };
 
   // 配置marked选项
@@ -251,7 +278,7 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
     if (selected.length > 0) {
       // 使用更准确的位置计算
       setTimeout(() => {
-        const rect = textarea.getBoundingClientRect();
+        // 首先尝试使用浏览器原生的selection API
         const selection = window.getSelection();
         
         if (selection && selection.rangeCount > 0) {
@@ -260,29 +287,58 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
           
           if (rangeRect.width > 0 && rangeRect.height > 0) {
             // 计算工具栏的预估高度
-            const toolbarHeight = 120; // 预估工具栏高度
-            const viewportHeight = window.innerHeight;
+            const toolbarHeight = 120;
             
-            // 计算最佳显示位置
-            let x = rangeRect.left + rangeRect.width / 2;
-            let y = rangeRect.top;
+            // 检测选择方向：比较光标位置和选择范围
+            const isSelectionDownward = end > start;
+            const cursorAtEnd = textarea.selectionDirection !== 'backward';
             
-            // 智能位置判断：如果上方空间不足，显示在下方
-            if (rangeRect.top < toolbarHeight + 20) {
-              // 上方空间不足，显示在选中文本下方
-              y = rangeRect.bottom + 10;
+            // 根据选择方向确定参考位置
+            let referenceY;
+            if (cursorAtEnd || isSelectionDownward) {
+              // 光标在选择末尾或向下选择，使用选择区域底部
+              referenceY = rangeRect.bottom;
             } else {
-              // 上方空间充足，显示在选中文本上方
-              y = rangeRect.top - 10;
+              // 光标在选择开头或向上选择，使用选择区域顶部
+              referenceY = rangeRect.top;
+            }
+            
+            // 计算最佳显示位置 - 使用固定定位
+            let x = rangeRect.left + rangeRect.width / 2;
+            let y;
+            
+            // 智能位置判断：优先显示在参考位置附近
+            if (cursorAtEnd || isSelectionDownward) {
+              // 选择结束在下方，优先显示在下方
+              if (window.innerHeight - referenceY > toolbarHeight + 20) {
+                y = referenceY + 10; // 显示在选择下方
+              } else {
+                y = referenceY - toolbarHeight - 10; // 空间不足时显示在上方
+              }
+            } else {
+              // 选择结束在上方，优先显示在上方
+              if (referenceY > toolbarHeight + 20) {
+                y = referenceY - 10; // 显示在选择上方
+              } else {
+                y = referenceY + 10; // 空间不足时显示在下方
+              }
             }
             
             // 确保工具栏不超出视口边界
-            const toolbarWidth = 400; // 预估工具栏宽度
+            const toolbarWidth = 400;
             if (x + toolbarWidth / 2 > window.innerWidth) {
               x = window.innerWidth - toolbarWidth / 2 - 20;
             }
             if (x - toolbarWidth / 2 < 0) {
               x = toolbarWidth / 2 + 20;
+            }
+            
+            // 确保y坐标在视口范围内
+            if (y < 10) {
+              y = 10;
+            }
+            if (y + toolbarHeight > window.innerHeight - 10) {
+              y = window.innerHeight - toolbarHeight - 10;
             }
             
             setSelectedText(selected);
@@ -292,7 +348,8 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
           }
         }
         
-        // 回退到简化计算
+        // 回退到基于textarea的计算
+        const rect = textarea.getBoundingClientRect();
         const textBeforeSelection = content.substring(0, start);
         const lines = textBeforeSelection.split('\n');
         const currentLine = lines.length - 1;
@@ -302,11 +359,12 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
         const charWidth = 8;
         const toolbarHeight = 120;
         
-        let x = rect.left + currentColumn * charWidth + 16; // 加上padding
-        let y = rect.top + currentLine * lineHeight + 16; // 加上padding
+        let x = rect.left + currentColumn * charWidth + 16;
+        let y = rect.top + currentLine * lineHeight + 16; // fixed定位不需要scrollY偏移
         
         // 智能位置判断
-        if (y < toolbarHeight + 20) {
+        const viewportY = rect.top + currentLine * lineHeight;
+        if (viewportY < toolbarHeight + 20) {
           y = y + lineHeight + 20; // 显示在下方
         } else {
           y = y - 10; // 显示在上方
@@ -346,7 +404,9 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
             />
             
             {/* Markdown 格式化工具栏 - 大屏幕显示 */}
-            {(viewMode === 'edit' || viewMode === 'split') && (
+            {(viewMode === 'edit' || viewMode === 'split') && 
+             !document.filePath?.endsWith('.docx') && 
+             !document.filePath?.endsWith('.doc') && (
               <div className="hidden lg:flex items-center gap-1 border-l border-gray-300 pl-4">
                 <button
                   onClick={() => insertMarkdown('**', '**')}
@@ -401,7 +461,9 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
             )}
             
             {/* Markdown 格式化工具栏 - 小屏幕下拉菜单 */}
-             {(viewMode === 'edit' || viewMode === 'split') && (
+             {(viewMode === 'edit' || viewMode === 'split') && 
+              !document.filePath?.endsWith('.docx') && 
+              !document.filePath?.endsWith('.doc') && (
                <div className="lg:hidden relative dropdown-container">
                  <button
                    onClick={() => setFormatDropdownOpen(!formatDropdownOpen)}
@@ -531,7 +593,14 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
           <div className={`${viewMode === 'split' ? 'w-1/2' : 'w-full'} flex flex-col relative`}>
             {/* 编辑器状态栏 */}
             <div className="px-3 md:px-4 py-1 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex justify-between">
-              <span>Markdown 编辑器</span>
+              <span>
+                {document.filePath?.endsWith('.docx') || document.filePath?.endsWith('.doc') 
+                  ? 'Word 文档编辑器' 
+                  : document.filePath?.endsWith('.txt')
+                  ? '文本编辑器'
+                  : 'Markdown 编辑器'
+                }
+              </span>
               <span>{content.length} 字符 | {content.split('\n').length} 行</span>
             </div>
             
@@ -543,7 +612,13 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
                 onMouseUp={handleTextSelection}
                 onKeyUp={handleTextSelection}
                 className="w-full h-full p-3 md:p-4 border-none outline-none resize-none font-mono text-sm md:text-base leading-relaxed bg-white focus:bg-gray-50/30 transition-colors touch-manipulation"
-                placeholder="# 开始写作...\n\n在这里输入您的 Markdown 内容。\n\n**提示：**\n- 使用 # 创建标题\n- 使用 **文本** 创建粗体\n- 使用 *文本* 创建斜体\n- 使用 \`代码\` 创建行内代码\n- 使用 > 创建引用\n- 使用 - 创建列表"
+placeholder={
+                  document.filePath?.endsWith('.docx') || document.filePath?.endsWith('.doc')
+                    ? '开始编写您的Word文档内容...\n\n提示：\n- 支持纯文本编辑\n- 自动保存到Word格式\n- 可以使用AI助手优化内容\n- 支持划词翻译和改写'
+                    : document.filePath?.endsWith('.txt')
+                    ? '开始编写您的文本内容...\n\n提示：\n- 纯文本编辑\n- 支持AI辅助功能\n- 自动保存'
+                    : '# 开始写作...\n\n在这里输入您的 Markdown 内容。\n\n**提示：**\n- 使用 # 创建标题\n- 使用 **文本** 创建粗体\n- 使用 *文本* 创建斜体\n- 使用 \`代码\` 创建行内代码\n- 使用 > 创建引用\n- 使用 - 创建列表'
+                }
                 spellCheck={false}
                 style={{
                   fontFamily: 'JetBrains Mono, Consolas, Monaco, monospace',
@@ -613,26 +688,49 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
           <div className={`${viewMode === 'split' ? 'w-1/2' : 'w-full'} flex flex-col`}>
             {/* 预览状态栏 */}
             <div className="px-3 md:px-4 py-1 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex justify-between">
-              <span>Markdown 预览</span>
+              <span>
+                {document.filePath?.endsWith('.docx') || document.filePath?.endsWith('.doc')
+                  ? 'Word 文档预览'
+                  : document.filePath?.endsWith('.txt')
+                  ? '文本预览'
+                  : 'Markdown 预览'
+                }
+              </span>
               <span>实时渲染</span>
             </div>
             
             <div className="flex-1 overflow-auto bg-white">
               {content.trim() ? (
-                <div 
-                  className="p-4 md:p-6 markdown-preview prose prose-gray max-w-none prose-sm md:prose-base"
-                  style={{
-                    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
-                    lineHeight: '1.7'
-                  }}
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
-                />
+                document.filePath?.endsWith('.docx') || document.filePath?.endsWith('.doc') || document.filePath?.endsWith('.txt') ? (
+                  // Word文档和文本文件的预览
+                  <div className="p-4 md:p-6 whitespace-pre-wrap font-sans text-gray-800 leading-relaxed">
+                    {content}
+                  </div>
+                ) : (
+                  // Markdown文件的预览
+                  <div 
+                    className="p-4 md:p-6 markdown-preview prose prose-gray max-w-none prose-sm md:prose-base"
+                    style={{
+                      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+                      lineHeight: '1.7'
+                    }}
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+                  />
+                )
               ) : (
                 <div className="flex items-center justify-center h-full text-gray-400 p-4">
                   <div className="text-center">
                     <div className="text-3xl md:text-4xl mb-4">📝</div>
                     <div className="text-base md:text-lg font-medium mb-2">开始写作</div>
-                    <div className="text-sm">在{viewMode === 'split' ? '左侧' : ''}编辑器中输入 Markdown 内容，这里将显示实时预览</div>
+                    <div className="text-sm">
+                      在{viewMode === 'split' ? '左侧' : ''}编辑器中输入
+                      {document.filePath?.endsWith('.docx') || document.filePath?.endsWith('.doc')
+                        ? ' Word 文档'
+                        : document.filePath?.endsWith('.txt')
+                        ? '文本'
+                        : ' Markdown'
+                      }内容，这里将显示实时预览
+                    </div>
                   </div>
                 </div>
               )}
@@ -648,7 +746,7 @@ const Editor: React.FC<EditorProps> = ({ document, onDocumentChange, onToggleSid
           position={selectionPosition}
           onClose={closeSelectionToolbar}
           document={document}
-          onDocumentChange={onDocumentChange}
+          onDocumentChange={handleDocumentChangeWithHistory}
           onToggleSidebar={onToggleSidebar}
         />
       )}

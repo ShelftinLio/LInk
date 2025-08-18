@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { PenTool, Settings, FileText, Sparkles, Menu, X } from 'lucide-react';
 import Editor from './components/Editor.tsx';
-import Sidebar from './components/Sidebar.tsx';
+import EnhancedSidebar from './components/EnhancedSidebar.tsx';
+import { LocalFileSystemService } from './services/localFileService';
 import AIPanel from './components/AIPanel.tsx';
 import SettingsModal from './components/SettingsModal.tsx';
 import { FileService, FileDocument } from './services/fileService';
@@ -14,6 +15,7 @@ function App() {
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [aiPanelMinimized, setAiPanelMinimized] = useState(false);
   
   // 检测移动端
   useEffect(() => {
@@ -80,11 +82,33 @@ function App() {
   const handleSaveFile = async () => {
     if (currentDocument) {
       try {
-        await FileService.saveFile(currentDocument);
+        // 如果是本地文件，使用LocalFileSystemService保存
+        if (currentDocument.filePath && currentDocument.filePath !== '') {
+          await LocalFileSystemService.saveFile(currentDocument);
+        } else {
+          // 否则使用原有的FileService
+          await FileService.saveFile(currentDocument);
+        }
+        
+        // 更新文档状态
+        handleDocumentUpdate(currentDocument);
       } catch (error) {
         console.error('保存文件失败:', error);
+        alert('保存文件失败');
       }
     }
+  };
+  
+  const handleFileSelect = async (document: FileDocument) => {
+    setCurrentDocument(document);
+    // 添加到最近文件
+    FileService.addToRecentFiles(document);
+  };
+  
+  // AI面板最小化处理
+  const handleAIPanelMinimize = () => {
+    setAiPanelMinimized(true);
+    setAiPanelOpen(false);
   };
 
   const handleDeleteDocument = (documentId: string) => {
@@ -118,15 +142,17 @@ function App() {
       <div className={`fixed left-0 top-0 h-full z-50 transform transition-transform duration-300 ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
-        <Sidebar
+        <EnhancedSidebar
           isOpen={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
-          currentDocument={currentDocument}
-          onDocumentChange={handleDocumentChange}
+          onFileSelect={handleFileSelect}
+          selectedFile={currentDocument?.filePath}
           documents={documents}
           onCreateDocument={handleCreateDocument}
           onOpenFile={handleOpenFile}
           onDeleteDocument={handleDeleteDocument}
+          currentDocument={currentDocument}
+          onDocumentChange={handleDocumentChange}
         />
       </div>
       
@@ -248,12 +274,15 @@ function App() {
            >
              <AIPanel 
                onClose={() => setAiPanelOpen(false)}
+               onMinimize={handleAIPanelMinimize}
                document={currentDocument}
                onDocumentChange={handleDocumentUpdate}
              />
            </div>
          </div>
        )}
+       
+
     </div>
   );
 }
